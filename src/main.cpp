@@ -2,6 +2,7 @@
 #include <iostream>
 #include "json.hpp"
 #include "PID.h"
+#include "twiddle.h"
 #include <math.h>
 
 // for convenience
@@ -32,10 +33,21 @@ int main()
 {
   uWS::Hub h;
 
-  PID pid;
-  // TODO: Initialize the pid variable.
+  bool USE_TWIDDLE = false;
+  bool DEBUG = false;
+  int PRINT_FREQUENCY = 1000;
+  int iteration = 0;
 
-  h.onMessage([&pid](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length, uWS::OpCode opCode) {
+  std::vector<double> coefficients = {0.8, 18.0};
+  PID pid;
+  pid.Init(coefficients[0], coefficients[1], 0.0);
+
+  Twiddle twiddle;
+  if (USE_TWIDDLE) {
+    twiddle.Init(coefficients, 1000, 700, 0.1);  
+  }
+
+  h.onMessage([USE_TWIDDLE, DEBUG, PRINT_FREQUENCY, &iteration, &twiddle, &pid](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length, uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
     // The 2 signifies a websocket event
@@ -50,22 +62,31 @@ int main()
           double cte = std::stod(j[1]["cte"].get<std::string>());
           double speed = std::stod(j[1]["speed"].get<std::string>());
           double angle = std::stod(j[1]["steering_angle"].get<std::string>());
-          double steer_value;
-          /*
-          * TODO: Calcuate steering value here, remember the steering value is
-          * [-1, 1].
-          * NOTE: Feel free to play around with the throttle and speed. Maybe use
-          * another PID controller to control the speed!
-          */
-          
-          // DEBUG
-          std::cout << "CTE: " << cte << " Steering Value: " << steer_value << std::endl;
 
+          pid.UpdateError(cte);
+          double steer_value = pid.SteeringAngle();
+
+          if (USE_TWIDDLE) {
+            twiddle.UpdateError(cte);
+            std::vector<double> coefficients = twiddle.Coefficients();
+            double kp = coefficients.size() > 0 ? coefficients[0] : 0.0;
+            double kd = coefficients.size() > 1 ? coefficients[1] : 0.0;
+            double ki = coefficients.size() > 2 ? coefficients[2] : 0.0;
+            pid.SetCoefficients(kp, kd, ki);
+          }
+          
+          iteration++;
+          if (DEBUG && iteration % PRINT_FREQUENCY == 0) {
+            std::cout << "CTE: " << cte << " Steering Value: " << steer_value << std::endl;  
+          }
+          
           json msgJson;
           msgJson["steering_angle"] = steer_value;
-          msgJson["throttle"] = 0.3;
+          msgJson["throttle"] = 0.6;
           auto msg = "42[\"steer\"," + msgJson.dump() + "]";
-          std::cout << msg << std::endl;
+          if (DEBUG && iteration % PRINT_FREQUENCY == 0) {
+            std::cout << msg << std::endl;
+          }
           ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
         }
       } else {
