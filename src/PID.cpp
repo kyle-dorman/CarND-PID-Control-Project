@@ -5,13 +5,8 @@ PID::PID() {}
 PID::~PID() {}
 
 void PID::Init(double _Kp, double _Kd, double _Ki) {
-	Kp = _Kp;
-  Ki = _Ki;
-  Kd = _Kd;
-
-  p_error = 0;
-  i_error = 0;
-  d_error = 0;
+	SetCoefficients(_Kp, _Kd, _Ki);
+  ResetError();
 }
 
 void PID::UpdateError(double cte) {
@@ -34,5 +29,11 @@ void PID::SetCoefficients(double _Kp, double _Kd, double _Ki) {
 	Kp = _Kp;
   Ki = _Ki;
   Kd = _Kd;
+}
+
+void PID::ResetError() {
+  p_error = 0;
+  i_error = 0;
+  d_error = 0;
 }
 

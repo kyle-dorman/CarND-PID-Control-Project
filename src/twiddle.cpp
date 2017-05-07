@@ -23,7 +23,7 @@ void Twiddle::Init(vector<double>& _coefficients,
 {
 	coefficients = _coefficients;
 
-	coefficients_delta = { 0.3, 2.0, 0.01 };
+	coefficients_delta = { 1.0, 10.0, 0.1 };
 
 	tolerance = _tolerance;
 
@@ -42,7 +42,7 @@ void Twiddle::Init(vector<double>& _coefficients,
 	index = coefficients.size() - 1;
 
 	// reset will increment coefficients[0], so decrement it beforehand.
-	coefficients[0] -= coefficients_delta[0];
+	// coefficients[0] -= coefficients_delta[0];
 
 	Reset();
 }
@@ -51,13 +51,17 @@ vector<double> Twiddle::Coefficients() {
 	return coefficients;
 }
 
-void Twiddle::UpdateError(double cte) {
+int Twiddle::Iteration() {
+	return iteration;
+}
+
+void Twiddle::UpdateError(double cte, double steering_angle) {
 	iteration++;
 	if (iteration < start_after_iterations) {
 		return;
 	}
 
-	total_error += abs(cte);
+	total_error += cte * cte; // Use square of cte to peanalize large errors
 
 	if (iteration >= max_iterations) {
 		double delta = best_error - total_error;
@@ -70,13 +74,21 @@ void Twiddle::UpdateError(double cte) {
 			} else {
 				Reset();	
 			}
-		} else if (next == decrement) {
-			Decrement();
 		} else {
-			coefficients[index] += coefficients_delta[index];
-      coefficients_delta[index] *= 0.9;
-      Reset();
+			Next(false);
 		}
+	}
+}
+
+void Twiddle::Next(bool maintainCoeffiecent) {
+	if (maintainCoeffiecent) {
+		Reset();
+	} else if (next == decrement) {
+		Decrement();
+	} else {
+		coefficients[index] += coefficients_delta[index];
+    coefficients_delta[index] *= 0.9;
+    Reset();
 	}
 }
 
@@ -109,8 +121,7 @@ void Twiddle::PrintCoefficients() {
 }
 
 void Twiddle::PrintBestScore() {
-	cout << "**************************" << endl;
+	cout << "*************NEW_BEST_ERROR*************" << endl;
 	cout << "New best_error: " << best_error << endl;
 	PrintCoefficients();
-	cout << "**************************" << endl;
 }

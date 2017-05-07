@@ -21,9 +21,13 @@ public:
 		int _start_after_iterations,
 		double _tolerance);
 
-	void UpdateError(double error);
+	void UpdateError(double error, double steering_angle);
+
+	void Next(bool maintainCoeffiecent);
 
 	std::vector<double> Coefficients();
+
+	int Iteration();
 
 private:
 

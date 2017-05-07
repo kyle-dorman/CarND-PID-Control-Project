@@ -46,6 +46,11 @@ public:
    * Reset the coefficents. Used during twiddling.
    */
   void SetCoefficients(double _Kp, double _Kd, double _Ki);
+
+  /*
+   * Reset errors to 0 when restarting car during twiddling.
+   */
+  void ResetError();
 };
 
 #endif /* PID_H */

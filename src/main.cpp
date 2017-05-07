@@ -29,6 +29,13 @@ std::string hasData(std::string s) {
   return "";
 }
 
+// reset
+void reset_simulator(uWS::WebSocket<uWS::SERVER>& ws)
+{
+  std::string msg("42[\"reset\", {}]");
+  ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
+}
+
 int main()
 {
   uWS::Hub h;
@@ -37,17 +44,19 @@ int main()
   bool DEBUG = false;
   int PRINT_FREQUENCY = 1000;
   int iteration = 0;
+  int last_reset = -1;
+  int best_iterations_distance = 100;
 
-  std::vector<double> coefficients = {0.8, 18.0};
+  std::vector<double> coefficients = {2.08, 155.058, 0.0211956};
   PID pid;
-  pid.Init(coefficients[0], coefficients[1], 0.0);
+  pid.Init(coefficients[0], coefficients[1], coefficients[2]);
 
   Twiddle twiddle;
   if (USE_TWIDDLE) {
-    twiddle.Init(coefficients, 1000, 700, 0.1);  
+    twiddle.Init(coefficients, 3000, 500, 0.1);  
   }
 
-  h.onMessage([USE_TWIDDLE, DEBUG, PRINT_FREQUENCY, &iteration, &twiddle, &pid](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length, uWS::OpCode opCode) {
+  h.onMessage([USE_TWIDDLE, DEBUG, PRINT_FREQUENCY, &iteration, &last_reset, &best_iterations_distance, &twiddle, &pid](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length, uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
     // The 2 signifies a websocket event
@@ -63,31 +72,52 @@ int main()
           double speed = std::stod(j[1]["speed"].get<std::string>());
           double angle = std::stod(j[1]["steering_angle"].get<std::string>());
 
-          pid.UpdateError(cte);
-          double steer_value = pid.SteeringAngle();
+          if (USE_TWIDDLE && std::abs(cte) > 3.0) {
+            if (iteration != last_reset) {
+              std::cout << "-----------RESET-----------" << std::endl;
+              last_reset = iteration;
+              // maintainCoeffiecent for twiddle if this is better than a previous run
+              bool maintainCoeffiecent = twiddle.Iteration() > best_iterations_distance;
+              if (maintainCoeffiecent == false) {
+                std::cout << "WORSE " << twiddle.Iteration() << " " << best_iterations_distance << std::endl;
+              } else {
+                std::cout << "BETTER " << twiddle.Iteration() << " " << best_iterations_distance << std::endl;
+                best_iterations_distance = twiddle.Iteration();
+              }
+              twiddle.Next(maintainCoeffiecent);
+              pid.ResetError();
+              reset_simulator(ws);
+            }
+          } else {
+            pid.UpdateError(cte);
+            double steer_value = pid.SteeringAngle();
 
-          if (USE_TWIDDLE) {
-            twiddle.UpdateError(cte);
-            std::vector<double> coefficients = twiddle.Coefficients();
-            double kp = coefficients.size() > 0 ? coefficients[0] : 0.0;
-            double kd = coefficients.size() > 1 ? coefficients[1] : 0.0;
-            double ki = coefficients.size() > 2 ? coefficients[2] : 0.0;
-            pid.SetCoefficients(kp, kd, ki);
+            if (USE_TWIDDLE) {
+              twiddle.UpdateError(cte, angle);
+              std::vector<double> coefficients = twiddle.Coefficients();
+              double kp = coefficients.size() > 0 ? coefficients[0] : 0.0;
+              double kd = coefficients.size() > 1 ? coefficients[1] : 0.0;
+              double ki = coefficients.size() > 2 ? coefficients[2] : 0.0;
+              pid.SetCoefficients(kp, kd, ki);
+              if (twiddle.Iteration() > 2998) {
+                best_iterations_distance = 2998;
+              }
+            }
+            
+            iteration++;
+            if (DEBUG && iteration % PRINT_FREQUENCY == 0) {
+              std::cout << "CTE: " << cte << " Steering Value: " << steer_value << std::endl;  
+            }
+            
+            json msgJson;
+            msgJson["steering_angle"] = steer_value;
+            msgJson["throttle"] = 0.6;
+            auto msg = "42[\"steer\"," + msgJson.dump() + "]";
+            if (DEBUG && iteration % PRINT_FREQUENCY == 0) {
+              std::cout << msg << std::endl;
+            }
+            ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
           }
-          
-          iteration++;
-          if (DEBUG && iteration % PRINT_FREQUENCY == 0) {
-            std::cout << "CTE: " << cte << " Steering Value: " << steer_value << std::endl;  
-          }
-          
-          json msgJson;
-          msgJson["steering_angle"] = steer_value;
-          msgJson["throttle"] = 0.6;
-          auto msg = "42[\"steer\"," + msgJson.dump() + "]";
-          if (DEBUG && iteration % PRINT_FREQUENCY == 0) {
-            std::cout << msg << std::endl;
-          }
-          ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
         }
       } else {
         // Manual driving
